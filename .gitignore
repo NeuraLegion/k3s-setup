@@ -1,0 +1,28 @@
+# K3s data directories (contain sensitive data and large files)
+k3s_data/kubeconfig/
+k3s_data/docker_images/
+k3s_data/shared/
+
+# Docker volumes and temporary files
+*.log
+.env
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp

@@ -1,0 +1,131 @@
+version: '3.7'
+services:
+  server:
+    image: rancher/k3s:v1.33.1-k3s1-amd64
+    container_name: k3s-server
+    networks:
+    - default
+    command: server --disable traefik --disable metrics-server --tls-san k3s-server
+    tmpfs:
+    - /run
+    - /var/run
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 65535
+        hard: 65535
+    privileged: true
+    restart: always
+    environment:
+    # - K3S_TOKEN=${K3S_PASSWORD_1} # Only required if we are running more than 1 node
+    - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
+    - K3S_KUBECONFIG_MODE=666
+    #- K3S_DISABLE_TRAEFIK=true
+    volumes:
+    - k3s-server:/var/lib/rancher/k3s
+    # This is just so that we get the kubeconfig file out
+    - ./k3s_data/kubeconfig:/output
+    - ./k3s_data/docker_images:/var/lib/rancher/k3s/agent/images
+#    expose:
+#    - "6443"  # Kubernetes API Server
+#    - "80"    # Ingress controller port 80
+#    - "443"   # Ingress controller port 443
+    ports:
+    - 80:80
+    - 443:443
+    - 6443:6443
+
+  k3s-setup:
+    image: dtzar/helm-kubectl:main
+    depends_on:
+      - server
+    volumes:
+      - ./k3s_data/kubeconfig:/kubeconfig:ro
+      - ./k3s_data:/shared
+    environment:
+      - KUBECONFIG=/tmp/kubeconfig.yaml
+    entrypoint: /bin/sh
+    command: 
+      - -c
+      - |
+        set -e
+        sleep 60 # Wait for server to be ready
+
+        echo 'Creating container kubeconfig...'
+        # Create container-specific kubeconfig without modifying original
+        cp /kubeconfig/kubeconfig.yaml /tmp/kubeconfig.yaml
+        sed -i 's/127.0.0.1:6443/k3s-server:6443/g' /tmp/kubeconfig.yaml
+        export KUBECONFIG=/tmp/kubeconfig.yaml
+
+        
+        echo 'Modified kubeconfig:'
+        cat /tmp/kubeconfig.yaml | grep server:
+        
+        # Wait for cluster
+        echo 'Waiting for cluster to be ready...'
+        until kubectl get nodes 2>/dev/null; do 
+          echo 'Still waiting for cluster...'
+          sleep 5
+        done
+        
+        echo 'K3s cluster is ready!'
+        kubectl get nodes
+        
+        # Install Helm repos
+        echo 'Adding Helm repositories...'
+        helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+        helm repo add vulnerable-apps https://neuralegion.github.io/helmcharts/
+        helm repo update
+        
+        # Install NGINX Ingress
+        echo 'Installing NGINX Ingress Controller...'
+        helm install ingress-nginx ingress-nginx/ingress-nginx \
+          --create-namespace \
+          --namespace ingress-nginx \
+          --set controller.service.type=LoadBalancer \
+          --wait
+        
+        # Wait for ingress controller to be ready
+        echo 'Waiting for ingress controller to be ready...'
+        kubectl wait --namespace ingress-nginx \
+          --for=condition=ready pod \
+          --selector=app.kubernetes.io/component=controller \
+          --timeout=300s
+        
+        # Create self-signed certificate
+        echo 'Creating self-signed certificate...'
+        apk add --no-cache openssl
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+          -keyout /tmp/tls.key -out /tmp/tls.crt \
+          -subj '/CN=brokencrystals.local' \
+          -addext 'subjectAltName=DNS:brokencrystals.local,DNS:auth.brokencrystals.local,DNS:mailcatcher.brokencrystals.local'
+        
+        kubectl create secret tls brokencrystals-tls \
+          --cert=/tmp/tls.crt --key=/tmp/tls.key
+        
+        # Install brokencrystals
+        echo 'Installing brokencrystals application...'
+        helm install brokencrystals vulnerable-apps/brokencrystals \
+          --set ingress.url=brokencrystals.local \
+          --set useMailcatcher=false \
+          --wait \
+          --timeout=600s
+        
+        echo '✅ Setup completed successfully!'
+        echo 'Add these entries to your /etc/hosts:'
+        echo '127.0.0.1 brokencrystals.local'
+        echo '127.0.0.1 auth.brokencrystals.local'
+        echo '127.0.0.1 mailcatcher.brokencrystals.local'
+        
+        # Keep container running
+        tail -f /dev/null
+      
+    restart: "no"
+volumes:
+  k3s-server: {}
+networks:
+  default:
+    ipam:
+      driver: default
+      config:
+        - subnet: "172.98.0.0/16" # Self-defined subnet on local machine
