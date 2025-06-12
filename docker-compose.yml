@@ -68,53 +68,13 @@ services:
         echo 'Adding Helm repositories...'
         helm repo add vulnerable-apps https://neuralegion.github.io/helmcharts/
         helm repo update
-        
-        # Create self-signed certificate
-        echo 'Creating self-signed certificate...'
-        apk add --no-cache openssl
-        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-          -keyout /tmp/tls.key -out /tmp/tls.crt \
-          -subj '/CN=brokencrystals.local' \
-          -addext 'subjectAltName=DNS:brokencrystals.local,DNS:auth.brokencrystals.local,DNS:mailcatcher.brokencrystals.local'
-        
-        kubectl create secret tls brokencrystals-tls \
-          --cert=/tmp/tls.crt --key=/tmp/tls.key
               
         # Install brokencrystals first
         echo 'Installing brokencrystals application...'
-        helm install brokencrystals vulnerable-apps/brokencrystals \
+        helm install brokencrystals vulnerable-apps/brokencrystals-unstable \
         --set ingress.url=brokencrystals.local \
-        --set useMailcatcher=true \
+        --set useMailcatcher=false \
         --wait --timeout=600s
-        
-        # NOW patch the ingresses to use Traefik
-        echo 'Patching ingresses to use Traefik...'
-        
-        # Patch ingress classes
-        kubectl patch ingress brokencrystals -p '{"spec":{"ingressClassName":"traefik"}}'
-        kubectl patch ingress brokencrystals-keycloak -p '{"spec":{"ingressClassName":"traefik"}}'
-        kubectl patch ingress brokencrystals-mailcatcher -p '{"spec":{"ingressClassName":"traefik"}}'
-        
-        # Remove nginx annotations and add traefik annotation
-        echo 'Updating annotations for Traefik...'
-        
-        # Main ingress
-        kubectl annotate ingress brokencrystals nginx.ingress.kubernetes.io/ssl-redirect- || true
-        kubectl annotate ingress brokencrystals nginx.ingress.kubernetes.io/proxy-ssl-protocols- || true
-        kubectl annotate ingress brokencrystals cert-manager.io/cluster-issuer- || true
-        kubectl annotate ingress brokencrystals kubernetes.io/ingress.class=traefik
-        
-        # Keycloak ingress  
-        kubectl annotate ingress brokencrystals-keycloak nginx.ingress.kubernetes.io/ssl-redirect- || true
-        kubectl annotate ingress brokencrystals-keycloak nginx.ingress.kubernetes.io/proxy-ssl-protocols- || true
-        kubectl annotate ingress brokencrystals-keycloak cert-manager.io/cluster-issuer- || true
-        kubectl annotate ingress brokencrystals-keycloak kubernetes.io/ingress.class=traefik
-        
-        # Mailcatcher ingress
-        kubectl annotate ingress brokencrystals-mailcatcher nginx.ingress.kubernetes.io/ssl-redirect- || true
-        kubectl annotate ingress brokencrystals-mailcatcher nginx.ingress.kubernetes.io/proxy-ssl-protocols- || true
-        kubectl annotate ingress brokencrystals-mailcatcher cert-manager.io/cluster-issuer- || true
-        kubectl annotate ingress brokencrystals-mailcatcher kubernetes.io/ingress.class=traefik
         
         # Verify the changes
         echo '🔍 Verifying ingress configuration...'
