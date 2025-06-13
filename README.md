@@ -17,6 +17,9 @@ docker-compose logs -f k3s-setup
 
 # Add to /etc/hosts
 echo "127.0.0.1 brokencrystals.local auth.brokencrystals.local mailcatcher.brokencrystals.local" | sudo tee -a /etc/hosts
+
+# Add kubeconfig to your local machine
+export KUBECONFIG=~/test2/k3s-dev/k3s_data/kubeconfig/
 ```
 
 ## Access URLs
