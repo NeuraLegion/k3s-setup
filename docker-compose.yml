@@ -73,6 +73,7 @@ services:
         echo 'Installing brokencrystals application...'
         helm install brokencrystals vulnerable-apps/brokencrystals-unstable \
         --set ingress.url=brokencrystals.local \
+        --set ingress.className=traefik \
         --set useMailcatcher=false \
         --wait --timeout=600s
         
